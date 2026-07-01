@@ -6,7 +6,7 @@
 
 **Architecture:** The CLI reads rows from restored PostgreSQL in `createdAt, id` order, maps each row to the extension server JSON payload, and posts one notification at a time. It fails on the first invalid row or HTTP error and reports the last successful id plus the failed id so a human can retry or intentionally resume past a broken row.
 
-**Tech Stack:** Go 1.23, standard `flag` and `net/http`, `github.com/jackc/pgx/v5/pgxpool` for PostgreSQL, `github.com/golang-jwt/jwt/v5` for HS256 JWTs.
+**Tech Stack:** Go 1.25 or newer, standard `flag` and `net/http`, `github.com/jackc/pgx/v5/pgxpool` for PostgreSQL, `github.com/golang-jwt/jwt/v5` for HS256 JWTs. The `pgx/v5 v5.10.0` dependency requires `go >= 1.25.0`.
 
 ---
 
