@@ -15,8 +15,8 @@ Misskey 12.119.0 以前の `notification` table を、復元済み PostgreSQL �
 - extension server の `POST /api/v1/notifications` への送信
 - Misskey 旧 notification table の主要カラムから extension server の JSON payload への変換
 - Bearer token または共有 secret から生成する短命 JWT での認証
-- `--dry-run`, `--limit`, `--resume-after-id`, `--fail-fast` による移行作業支援
-- 成功件数、失敗件数、最後に処理した notification id のログ出力
+- `--dry-run`, `--limit`, `--resume-after-id` による移行作業支援
+- 成功件数、失敗件数、最後に成功した notification id、失敗した notification id のログ出力
 
 対象に含めないもの:
 
@@ -46,7 +46,6 @@ CLI は復元済み PostgreSQL へ接続する。
 - `--dry-run`: DB 読み取りと payload 生成だけを行い、HTTP POST しない
 - `--limit`: 最大 import 件数
 - `--resume-after-id`: 指定 id の次の行から再開する
-- `--fail-fast`: 最初の失敗で停止する
 - `--batch-size`: DB から一度に読む件数。HTTP は一件ずつ送る
 
 ## PostgreSQL Query
@@ -104,7 +103,7 @@ extension server は `POST /api/v1/notifications` で `BaseNotification` 互換 
 - `appAccessTokenId` -> `appAccessTokenId`。NULL の場合は省略
 - `achievement` -> `achievement`。NULL の場合は省略
 
-`choice` は現行 extension server model に対応フィールドがないため送信しない。旧 `pollVote` が残っている場合は、extension server が未知 type を格納できない可能性があるため、importer はエラーとして扱い、`--fail-fast=false` のときは失敗件数に記録して続行する。
+`choice` は現行 extension server model に対応フィールドがないため送信しない。旧 `pollVote` が残っている場合は、extension server が未知 type を格納できない可能性があるため、importer はエラーとして扱い停止する。完全に壊れたレコードだと判断して意図的に飛ばす場合は、失敗した id を `--resume-after-id` に指定して再実行する。
 
 ## HTTP Behavior
 
@@ -129,7 +128,7 @@ Content-Type: application/json
 - timeout
 - response body が読めない通信エラー
 
-失敗時は notification id、HTTP status、短い error message をログへ出す。`--fail-fast` が true の場合は即終了する。false の場合は続行し、最後に非ゼロ exit code で終了する。
+失敗時は notification id、HTTP status、短い error message をログへ出し、即終了する。importer は失敗レコードを暗黙にスキップしない。壊れたレコードを飛ばす判断は運用者が行い、`--resume-after-id` で明示的に再開する。
 
 ## Authentication
 
@@ -150,7 +149,7 @@ claims:
 
 DB 接続失敗、query 失敗、必須カラム欠落は即終了する。
 
-行単位の validation 失敗や HTTP 失敗は `--fail-fast` に従う。失敗を継続する場合も、最後に成功件数、失敗件数、最後に成功した id、最後に処理した id を表示する。
+行単位の validation 失敗や HTTP 失敗も即終了する。終了時は成功件数、失敗件数、最後に成功した id、失敗した id を表示する。
 
 `--dry-run` では HTTP 送信を行わず、payload validation と件数集計だけを実行する。
 
@@ -163,7 +162,7 @@ TDD で以下を確認する。
 - `resume-after-id` が `createdAt, id` 順で次の行から再開する
 - HTTP client が Authorization header と JSON body を送る
 - 2xx を成功、4xx/5xx を失敗として扱う
-- `--fail-fast` の有無で停止条件が変わる
+- 最初の validation 失敗または HTTP 失敗で停止し、失敗した id を報告する
 - `--dry-run` では HTTP request を送らない
 
 ## Repository Shape
@@ -214,12 +213,12 @@ miwkey-notification-importer \
   --secret "$NOTIFICATION_EXTENSION_SECRET"
 ```
 
-失敗後は最後に処理した id を使って再開する。
+失敗後は最後に成功した id を使って再開する。壊れたレコードを意図的に飛ばす場合だけ、失敗した id を指定する。この判断は importer が自動では行わない。
 
 ```bash
 miwkey-notification-importer \
   --postgres-url "$TEMP_POSTGRES_URL" \
   --extension-url "$EXTENSION_URL" \
   --secret "$NOTIFICATION_EXTENSION_SECRET" \
-  --resume-after-id "$LAST_PROCESSED_ID"
+  --resume-after-id "$LAST_SUCCESSFUL_ID"
 ```
