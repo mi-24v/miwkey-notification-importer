@@ -42,6 +42,10 @@ type ResumeBoundary struct {
 	ID        string
 }
 
+type NotificationColumns struct {
+	Achievement bool
+}
+
 func (r Reader) Read(ctx context.Context, opts ReadOptions) ([]notification.Row, error) {
 	var resume *ResumeBoundary
 	if opts.ResumeAfterID != "" {
@@ -52,7 +56,12 @@ func (r Reader) Read(ctx context.Context, opts ReadOptions) ([]notification.Row,
 		resume = &boundary
 	}
 
-	query, args := BuildListQuery(opts.BatchSize, resume)
+	columns, err := r.readNotificationColumns(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	query, args := BuildListQueryForColumns(opts.BatchSize, resume, columns)
 	rows, err := r.DB.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query notifications: %w", err)
@@ -74,6 +83,30 @@ func (r Reader) Read(ctx context.Context, opts ReadOptions) ([]notification.Row,
 	return notifications, nil
 }
 
+func (r Reader) readNotificationColumns(ctx context.Context) (NotificationColumns, error) {
+	rows, err := r.DB.Query(ctx, `SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'notification' AND column_name IN ('achievement')`)
+	if err != nil {
+		return NotificationColumns{}, fmt.Errorf("inspect notification columns: %w", err)
+	}
+	defer rows.Close()
+
+	var columns NotificationColumns
+	for rows.Next() {
+		var columnName string
+		if err := rows.Scan(&columnName); err != nil {
+			return NotificationColumns{}, fmt.Errorf("scan notification column: %w", err)
+		}
+		if columnName == "achievement" {
+			columns.Achievement = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return NotificationColumns{}, fmt.Errorf("read notification columns: %w", err)
+	}
+
+	return columns, nil
+}
+
 func (r Reader) findResumeBoundary(ctx context.Context, id string) (ResumeBoundary, error) {
 	var boundary ResumeBoundary
 	err := r.DB.QueryRow(ctx, `SELECT "createdAt", id FROM notification WHERE id = $1`, id).Scan(
@@ -87,12 +120,22 @@ func (r Reader) findResumeBoundary(ctx context.Context, id string) (ResumeBounda
 }
 
 func BuildListQuery(limit int, resume *ResumeBoundary) (string, []any) {
+	return BuildListQueryForColumns(limit, resume, NotificationColumns{Achievement: true})
+}
+
+func BuildListQueryForColumns(limit int, resume *ResumeBoundary, columns NotificationColumns) (string, []any) {
 	if limit <= 0 {
 		limit = defaultBatchSize
 	}
 
 	var builder strings.Builder
-	builder.WriteString(`SELECT id, "createdAt", "notifieeId", "notifierId", type, "isRead", "noteId", reaction, choice, "customBody", "customHeader", "customIcon", "appAccessTokenId", achievement FROM notification`)
+	builder.WriteString(`SELECT id, "createdAt", "notifieeId", "notifierId", type, "isRead", "noteId", reaction, choice, "customBody", "customHeader", "customIcon", "appAccessTokenId", `)
+	if columns.Achievement {
+		builder.WriteString(`achievement`)
+	} else {
+		builder.WriteString(`NULL::varchar AS achievement`)
+	}
+	builder.WriteString(` FROM notification`)
 
 	if resume != nil {
 		builder.WriteString(` WHERE ("createdAt", id) > ($1, $2)`)

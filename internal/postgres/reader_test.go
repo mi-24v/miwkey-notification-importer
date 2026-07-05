@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -22,6 +23,20 @@ func TestBuildListQueryWithoutResume(t *testing.T) {
 	}
 	if !strings.Contains(query, "LIMIT $1") {
 		t.Fatalf("query missing limit placeholder: %s", query)
+	}
+	if len(args) != 1 || args[0] != 100 {
+		t.Fatalf("args = %#v", args)
+	}
+}
+
+func TestBuildListQueryForColumnsUsesNullForMissingAchievementColumn(t *testing.T) {
+	query, args := postgres.BuildListQueryForColumns(100, nil, postgres.NotificationColumns{})
+
+	if strings.Contains(query, ", achievement FROM notification") {
+		t.Fatalf("query reads missing achievement column: %s", query)
+	}
+	if !strings.Contains(query, "NULL::varchar AS achievement") {
+		t.Fatalf("query missing NULL achievement fallback: %s", query)
 	}
 	if len(args) != 1 || args[0] != 100 {
 		t.Fatalf("args = %#v", args)
@@ -49,23 +64,28 @@ func TestBuildListQueryWithResume(t *testing.T) {
 func TestReaderReadMapsNullableColumns(t *testing.T) {
 	createdAt := time.Date(2022, 3, 4, 5, 6, 7, 0, time.UTC)
 	db := &fakeDB{
-		rows: &fakeRows{
-			values: [][]any{{
-				"notification-id",
-				createdAt,
-				"notifiee",
-				pgtype.Text{},
-				"follow",
-				true,
-				pgtype.Text{},
-				pgtype.Text{String: ":smile:", Valid: true},
-				pgtype.Int4{},
-				pgtype.Text{},
-				pgtype.Text{},
-				pgtype.Text{},
-				pgtype.Text{},
-				pgtype.Text{},
-			}},
+		rows: []*fakeRows{
+			{
+				values: [][]any{},
+			},
+			{
+				values: [][]any{{
+					"notification-id",
+					createdAt,
+					"notifiee",
+					pgtype.Text{},
+					"follow",
+					true,
+					pgtype.Text{},
+					pgtype.Text{String: ":smile:", Valid: true},
+					pgtype.Int4{},
+					pgtype.Text{},
+					pgtype.Text{},
+					pgtype.Text{},
+					pgtype.Text{},
+					pgtype.Text{},
+				}},
+			},
 		},
 	}
 	reader := postgres.Reader{DB: db}
@@ -96,12 +116,113 @@ func TestReaderReadMapsNullableColumns(t *testing.T) {
 	}
 }
 
-type fakeDB struct {
-	rows *fakeRows
+func TestReaderReadUsesNullAchievementFallbackWhenColumnIsMissing(t *testing.T) {
+	createdAt := time.Date(2022, 3, 4, 5, 6, 7, 0, time.UTC)
+	db := &fakeDB{
+		rows: []*fakeRows{
+			{
+				values: [][]any{},
+			},
+			{
+				values: [][]any{{
+					"notification-id",
+					createdAt,
+					"notifiee",
+					pgtype.Text{},
+					"follow",
+					false,
+					pgtype.Text{},
+					pgtype.Text{},
+					pgtype.Int4{},
+					pgtype.Text{},
+					pgtype.Text{},
+					pgtype.Text{},
+					pgtype.Text{},
+					pgtype.Text{},
+				}},
+			},
+		},
+	}
+	reader := postgres.Reader{DB: db}
+
+	rows, err := reader.Read(context.Background(), postgres.ReadOptions{BatchSize: 10})
+	if err != nil {
+		t.Fatalf("Read() error = %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("len(rows) = %d", len(rows))
+	}
+	if len(db.queries) != 2 {
+		t.Fatalf("queries = %#v", db.queries)
+	}
+	if !strings.Contains(db.queries[0], "information_schema.columns") {
+		t.Fatalf("first query should inspect columns: %s", db.queries[0])
+	}
+	if !strings.Contains(db.queries[1], "NULL::varchar AS achievement") {
+		t.Fatalf("notification query should use achievement fallback: %s", db.queries[1])
+	}
 }
 
-func (db *fakeDB) Query(_ context.Context, _ string, _ ...any) (postgres.Rows, error) {
-	return db.rows, nil
+func TestReaderReadSelectsAchievementWhenColumnExists(t *testing.T) {
+	createdAt := time.Date(2022, 3, 4, 5, 6, 7, 0, time.UTC)
+	db := &fakeDB{
+		rows: []*fakeRows{
+			{
+				values: [][]any{{"achievement"}},
+			},
+			{
+				values: [][]any{{
+					"notification-id",
+					createdAt,
+					"notifiee",
+					pgtype.Text{},
+					"follow",
+					true,
+					pgtype.Text{},
+					pgtype.Text{String: ":smile:", Valid: true},
+					pgtype.Int4{},
+					pgtype.Text{},
+					pgtype.Text{},
+					pgtype.Text{},
+					pgtype.Text{},
+					pgtype.Text{String: "notes10", Valid: true},
+				}},
+			},
+		},
+	}
+	reader := postgres.Reader{DB: db}
+
+	rows, err := reader.Read(context.Background(), postgres.ReadOptions{BatchSize: 10})
+	if err != nil {
+		t.Fatalf("Read() error = %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("len(rows) = %d", len(rows))
+	}
+	if len(db.queries) != 2 {
+		t.Fatalf("queries = %#v", db.queries)
+	}
+	if !strings.Contains(db.queries[1], `, achievement FROM notification`) {
+		t.Fatalf("notification query should select achievement column: %s", db.queries[1])
+	}
+	if rows[0].Achievement == nil || *rows[0].Achievement != "notes10" {
+		t.Fatalf("Achievement = %v", rows[0].Achievement)
+	}
+}
+
+type fakeDB struct {
+	rows    []*fakeRows
+	queries []string
+}
+
+func (db *fakeDB) Query(_ context.Context, query string, _ ...any) (postgres.Rows, error) {
+	db.queries = append(db.queries, query)
+	if len(db.rows) == 0 {
+		return nil, fmt.Errorf("unexpected query: %s", query)
+	}
+	rows := db.rows[0]
+	db.rows = db.rows[1:]
+	return rows, nil
 }
 
 func (db *fakeDB) QueryRow(_ context.Context, _ string, _ ...any) postgres.RowScanner {
