@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"time"
@@ -16,16 +17,48 @@ import (
 )
 
 func main() {
-	if err := run(context.Background(), os.Args[1:]); err != nil {
+	if err := runWithIO(context.Background(), os.Args[1:], os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
 func run(ctx context.Context, args []string) error {
+	return runWithIO(ctx, args, os.Stdout, os.Stderr)
+}
+
+func runWithIO(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) error {
+	if len(args) > 0 && args[0] == "token" {
+		return runToken(ctx, args[1:], stdout, stderr)
+	}
+
+	return runImport(ctx, args, stderr)
+}
+
+func runToken(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) error {
+	var secret string
+	flags := flag.NewFlagSet("miwkey-notification-importer token", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	flags.StringVar(&secret, "secret", "", "shared secret for HS256 JWT generation")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if secret == "" {
+		return fmt.Errorf("--secret is required")
+	}
+
+	token, err := (auth.JWTSource{Secret: secret}).Token(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(stdout, token)
+	return nil
+}
+
+func runImport(ctx context.Context, args []string, stderr io.Writer) error {
 	var cfg config
 	flags := flag.NewFlagSet("miwkey-notification-importer", flag.ContinueOnError)
-	flags.SetOutput(os.Stderr)
+	flags.SetOutput(stderr)
 	flags.StringVar(&cfg.postgresURL, "postgres-url", "", "restored PostgreSQL connection URL")
 	flags.StringVar(&cfg.extensionURL, "extension-url", "", "notification extension server base URL")
 	flags.StringVar(&cfg.bearerToken, "bearer-token", "", "pre-generated bearer token")
@@ -64,7 +97,7 @@ func run(ctx context.Context, args []string) error {
 		BatchSize:     cfg.batchSize,
 		ResumeAfterID: cfg.resumeAfterID,
 	})
-	printResult(result)
+	printResult(stderr, result)
 	if err != nil {
 		return err
 	}
@@ -108,8 +141,8 @@ func (c config) tokenSource() auth.TokenSource {
 	return auth.JWTSource{Secret: c.secret}
 }
 
-func printResult(result importer.Result) {
-	fmt.Fprintf(os.Stderr, "success=%d failure=%d last_successful_id=%q failed_id=%q\n",
+func printResult(w io.Writer, result importer.Result) {
+	fmt.Fprintf(w, "success=%d failure=%d last_successful_id=%q failed_id=%q\n",
 		result.SuccessCount,
 		result.FailureCount,
 		result.LastSuccessfulID,
