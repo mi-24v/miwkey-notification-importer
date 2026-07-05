@@ -91,3 +91,26 @@ The importer stops on the first invalid row or HTTP error. It prints:
 - failed notification id
 
 It never silently skips failed records.
+
+## Integration Test
+
+`integration/misskey-migration/run.sh` creates isolated Docker services for:
+
+- Misskey 12.119.0 with its own PostgreSQL and Redis
+- Misskey 2025.12.2 with its own PostgreSQL and Redis
+- DynamoDB Local
+- the miwkey-extension server from `../miwkey-extension`
+- this importer in a portable Go container
+
+The script runs both Misskey migrations, seeds three 12.119.0 notification rows,
+imports them through this CLI, and verifies the migrated IDs through the
+extension server API.
+
+Requirements: Docker Compose, `curl`, `openssl`, and `jq`.
+
+```bash
+integration/misskey-migration/run.sh
+```
+
+Set `MIWKEY_EXTENSION_DIR` if the extension server repository is not at
+`../miwkey-extension`.
