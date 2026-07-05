@@ -1,0 +1,114 @@
+services:
+  source-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: misskey
+      POSTGRES_USER: misskey
+      POSTGRES_PASSWORD: misskey
+    ports:
+      - "${SOURCE_POSTGRES_PORT:-35432}:5432"
+    volumes:
+      - source-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U misskey -d misskey"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  source-redis:
+    image: redis:7-alpine
+    volumes:
+      - source-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  source-misskey:
+    image: misskey/misskey:12.119.0
+    depends_on:
+      source-db:
+        condition: service_healthy
+      source-redis:
+        condition: service_healthy
+    ports:
+      - "${SOURCE_MISSKEY_PORT:-31200}:3000"
+    volumes:
+      - ./source/.config:/misskey/.config:ro
+
+  target-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: misskey
+      POSTGRES_USER: misskey
+      POSTGRES_PASSWORD: misskey
+    ports:
+      - "${TARGET_POSTGRES_PORT:-35532}:5432"
+    volumes:
+      - target-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U misskey -d misskey"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  target-redis:
+    image: redis:7-alpine
+    volumes:
+      - target-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  target-misskey:
+    image: misskey/misskey:2025.12.2
+    depends_on:
+      target-db:
+        condition: service_healthy
+      target-redis:
+        condition: service_healthy
+    ports:
+      - "${TARGET_MISSKEY_PORT:-32500}:3000"
+    volumes:
+      - ./target/.config:/misskey/.config:ro
+
+  dynamodb-local:
+    image: amazon/dynamodb-local:2.6.1
+    command: "-jar DynamoDBLocal.jar -sharedDb -inMemory"
+    ports:
+      - "${DYNAMODB_PORT:-38000}:8000"
+
+  extension-server:
+    image: golang:1.25.11-alpine
+    working_dir: /workspace/miwkey-extension
+    command: >
+      sh -lc 'until nc -z dynamodb-local 8000; do sleep 1; done;
+      /usr/local/go/bin/go run ./app'
+    depends_on:
+      - dynamodb-local
+    environment:
+      PATH: /usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      AUTH_SECRET: ${AUTH_SECRET:-miwkey-importer-integration-secret}
+      AWS_ACCESS_KEY_ID: integration
+      AWS_SECRET_ACCESS_KEY: integration
+      AWS_REGION: ap-northeast-1
+      AWS_ENDPOINT_URL_DYNAMODB: http://dynamodb-local:8000
+      DYNAMODB_AUTO_CREATE: "true"
+      DYNAMODB_NOTIFICATION_TABLE: Notifications
+    ports:
+      - "${EXTENSION_PORT:-38080}:8080"
+    volumes:
+      - ${MIWKEY_EXTENSION_DIR:?Set MIWKEY_EXTENSION_DIR}:/workspace/miwkey-extension:ro
+      - extension-go-mod:/go/pkg/mod
+      - extension-go-cache:/root/.cache/go-build
+
+volumes:
+  source-db-data:
+  source-redis-data:
+  target-db-data:
+  target-redis-data:
+  extension-go-mod:
+  extension-go-cache:

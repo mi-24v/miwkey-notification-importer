@@ -1,0 +1,80 @@
+[tools]
+go = "1.25.11"
+
+[tasks.test]
+description = "Run unit tests"
+run = "go test ./..."
+
+[tasks."integration:env:reset"]
+description = "Recreate the Misskey migration integration environment"
+run = "tests/integration/testdata/misskey-migration/setup.sh reset"
+
+[tasks."integration:env:up"]
+description = "Start migration support services without seeding test data"
+run = "tests/integration/testdata/misskey-migration/setup.sh up"
+
+[tasks."integration:down"]
+description = "Stop the Misskey migration integration environment"
+run = "tests/integration/testdata/misskey-migration/setup.sh down"
+
+[tasks."integration:test"]
+description = "Run black-box integration assertions against the seeded environment"
+run = "go test -tags=integration ./tests/integration -run TestMigrationImportsSeededNotifications -count=1"
+
+[tasks."integration:verify"]
+description = "Verify migrated notifications in an existing extension environment"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${AUTH_SECRET:?Set AUTH_SECRET}"
+: "${NOTIFIEE_ID:?Set NOTIFIEE_ID}"
+
+go test -tags=integration ./tests/integration -run TestVerifyExistingNotifications -count=1
+'''
+
+[tasks."test:integration"]
+description = "Reset the environment, run the integration test, then clean up"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+trap 'mise run integration:down' EXIT
+mise run integration:env:reset
+mise run integration:test
+'''
+
+[tasks."migration:dry-run"]
+description = "Run importer dry-run against POSTGRES_URL"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${POSTGRES_URL:?Set POSTGRES_URL}"
+: "${AUTH_SECRET:?Set AUTH_SECRET}"
+
+EXTENSION_URL="${EXTENSION_URL:-http://localhost:38080}"
+
+go run ./cmd/miwkey-notification-importer \
+  --postgres-url "$POSTGRES_URL" \
+  --extension-url "$EXTENSION_URL" \
+  --secret "$AUTH_SECRET" \
+  --dry-run
+'''
+
+[tasks."migration:import"]
+description = "Import notifications from POSTGRES_URL into the extension server"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${POSTGRES_URL:?Set POSTGRES_URL}"
+: "${AUTH_SECRET:?Set AUTH_SECRET}"
+
+EXTENSION_URL="${EXTENSION_URL:-http://localhost:38080}"
+
+go run ./cmd/miwkey-notification-importer \
+  --postgres-url "$POSTGRES_URL" \
+  --extension-url "$EXTENSION_URL" \
+  --secret "$AUTH_SECRET"
+'''

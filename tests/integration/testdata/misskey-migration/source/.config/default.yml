@@ -1,0 +1,15 @@
+url: http://localhost:31200/
+port: 3000
+
+db:
+  host: source-db
+  port: 5432
+  db: misskey
+  user: misskey
+  pass: misskey
+
+redis:
+  host: source-redis
+  port: 6379
+
+id: aid
