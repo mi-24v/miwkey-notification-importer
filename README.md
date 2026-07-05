@@ -81,6 +81,14 @@ Only skip a broken record intentionally. To do that, resume after the failed id.
 
 Exactly one of `--secret` or `--bearer-token` is required.
 
+## Token Helper
+
+Generate a bearer token for manual extension API checks.
+
+```bash
+miwkey-notification-importer token --secret "$NOTIFICATION_EXTENSION_SECRET"
+```
+
 ## Failure Behavior
 
 The importer stops on the first invalid row or HTTP error. It prints:
@@ -94,23 +102,46 @@ It never silently skips failed records.
 
 ## Integration Test
 
-`integration/misskey-migration/run.sh` creates isolated Docker services for:
+`mise run test:integration` creates isolated Docker services for:
 
 - Misskey 12.119.0 with its own PostgreSQL and Redis
 - Misskey 2025.12.2 with its own PostgreSQL and Redis
 - DynamoDB Local
 - the miwkey-extension server from `../miwkey-extension`
-- this importer in a portable Go container
 
-The script runs both Misskey migrations, seeds three 12.119.0 notification rows,
-imports them through this CLI, and verifies the migrated IDs through the
-extension server API.
+The task runs both Misskey migrations, seeds three 12.119.0 notification rows,
+imports them through this CLI, verifies the migrated IDs through the extension
+server API, and cleans up the Docker environment.
 
-Requirements: Docker Compose, `curl`, `openssl`, and `jq`.
+Requirements: Docker Compose and mise.
 
 ```bash
-integration/misskey-migration/run.sh
+mise run test:integration
 ```
 
 Set `MIWKEY_EXTENSION_DIR` if the extension server repository is not at
 `../miwkey-extension`.
+
+For manual checks against an existing extension environment:
+
+```bash
+AUTH_SECRET=... \
+NOTIFIEE_ID=... \
+EXPECTED_MIN_COUNT=1 \
+mise run integration:verify
+```
+
+For production dump rehearsals, start support services, restore your dump into
+the source PostgreSQL URL you choose, then run the migration tasks.
+
+```bash
+mise run integration:env:up
+
+POSTGRES_URL=postgres://misskey:misskey@localhost:35432/misskey?sslmode=disable \
+AUTH_SECRET=... \
+mise run migration:dry-run
+
+POSTGRES_URL=postgres://misskey:misskey@localhost:35432/misskey?sslmode=disable \
+AUTH_SECRET=... \
+mise run migration:import
+```

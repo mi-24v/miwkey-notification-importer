@@ -105,16 +105,6 @@ services:
       - extension-go-mod:/go/pkg/mod
       - extension-go-cache:/root/.cache/go-build
 
-  importer:
-    image: golang:1.25.11-alpine
-    working_dir: /workspace/miwkey-notification-importer
-    environment:
-      PATH: /usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-    volumes:
-      - ../..:/workspace/miwkey-notification-importer
-      - importer-go-mod:/go/pkg/mod
-      - importer-go-cache:/root/.cache/go-build
-
 volumes:
   source-db-data:
   source-redis-data:
@@ -122,5 +112,3 @@ volumes:
   target-redis-data:
   extension-go-mod:
   extension-go-cache:
-  importer-go-mod:
-  importer-go-cache:
