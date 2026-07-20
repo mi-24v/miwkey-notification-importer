@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/mi-24v/miwkey-notification-importer/internal/importer"
 )
 
 func TestRunTokenPrintsSignedJWT(t *testing.T) {
@@ -62,5 +63,41 @@ func TestRunTokenRequiresSecret(t *testing.T) {
 	}
 	if stdout.Len() != 0 {
 		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestSplitCommaListTrimsEmptyValues(t *testing.T) {
+	result := splitCommaList("pollVote, groupInvited,,reaction ")
+	want := []string{"pollVote", "groupInvited", "reaction"}
+
+	if strings.Join(result, ",") != strings.Join(want, ",") {
+		t.Fatalf("splitCommaList() = %v, want %v", result, want)
+	}
+}
+
+func TestPrintResultIncludesSkippedNotifications(t *testing.T) {
+	var stderr bytes.Buffer
+
+	printResult(&stderr, importer.Result{
+		SuccessCount:     10,
+		SkippedCount:     2,
+		FailureCount:     1,
+		LastSuccessfulID: "ok",
+		LastSkippedID:    "skipped",
+		FailedID:         "failed",
+	})
+
+	output := stderr.String()
+	for _, want := range []string{
+		"success=10",
+		"skipped=2",
+		"failure=1",
+		`last_successful_id="ok"`,
+		`last_skipped_id="skipped"`,
+		`failed_id="failed"`,
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("printResult() = %q, missing %q", output, want)
+		}
 	}
 }

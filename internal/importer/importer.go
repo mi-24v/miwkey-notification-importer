@@ -29,13 +29,16 @@ type Options struct {
 	Limit         int
 	BatchSize     int
 	ResumeAfterID string
+	ExcludeTypes  []string
 }
 
 type Result struct {
 	SuccessCount     int
 	FailureCount     int
+	SkippedCount     int
 	LastSuccessfulID string
 	FailedID         string
+	LastSkippedID    string
 }
 
 func (i Importer) Run(ctx context.Context, opts Options) (Result, error) {
@@ -52,6 +55,7 @@ func (i Importer) Run(ctx context.Context, opts Options) (Result, error) {
 	if batchSize <= 0 {
 		batchSize = defaultBatchSize
 	}
+	excludeTypes := excludeTypeSet(opts.ExcludeTypes)
 
 	for {
 		readBatchSize := batchSize
@@ -77,6 +81,13 @@ func (i Importer) Run(ctx context.Context, opts Options) (Result, error) {
 		}
 
 		for _, row := range rows {
+			if _, ok := excludeTypes[row.Type]; ok {
+				result.SkippedCount++
+				result.LastSkippedID = row.ID
+				resumeAfterID = row.ID
+				continue
+			}
+
 			payload, err := row.ToPayload()
 			if err != nil {
 				result.FailureCount++
@@ -105,4 +116,16 @@ func (i Importer) Run(ctx context.Context, opts Options) (Result, error) {
 			return result, nil
 		}
 	}
+}
+
+func excludeTypeSet(types []string) map[string]struct{} {
+	if len(types) == 0 {
+		return nil
+	}
+
+	result := make(map[string]struct{}, len(types))
+	for _, notificationType := range types {
+		result[notificationType] = struct{}{}
+	}
+	return result
 }
