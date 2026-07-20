@@ -47,6 +47,17 @@ Run the import.
   --secret "$NOTIFICATION_EXTENSION_SECRET"
 ```
 
+If you intentionally do not migrate a notification type, exclude it explicitly.
+Excluded rows are skipped before payload validation and counted in the result.
+
+```bash
+./miwkey-notification-importer \
+  --postgres-url "$TEMP_POSTGRES_URL" \
+  --extension-url "$EXTENSION_URL" \
+  --secret "$NOTIFICATION_EXTENSION_SECRET" \
+  --exclude-types pollVote
+```
+
 If an error stops the import, inspect the failed notification. Resume after the
 last successful id.
 
@@ -78,6 +89,8 @@ Only skip a broken record intentionally. To do that, resume after the failed id.
 - `--limit`: maximum number of notifications to process.
 - `--resume-after-id`: resume after the specified notification id.
 - `--batch-size`: rows to read per PostgreSQL query. Default: `500`.
+- `--exclude-types`: comma-separated notification types to skip before
+  validation, for example `pollVote`.
 
 Exactly one of `--secret` or `--bearer-token` is required.
 
@@ -94,11 +107,14 @@ miwkey-notification-importer token --secret "$NOTIFICATION_EXTENSION_SECRET"
 The importer stops on the first invalid row or HTTP error. It prints:
 
 - success count
+- skipped count
 - failure count
 - last successful notification id
+- last skipped notification id
 - failed notification id
 
-It never silently skips failed records.
+It never silently skips failed records. Only types passed with `--exclude-types`
+are skipped.
 
 ## Integration Test
 
@@ -139,9 +155,11 @@ mise run integration:env:up
 
 POSTGRES_URL=postgres://misskey:misskey@localhost:35432/misskey?sslmode=disable \
 AUTH_SECRET=... \
+EXCLUDE_TYPES=pollVote \
 mise run migration:dry-run
 
 POSTGRES_URL=postgres://misskey:misskey@localhost:35432/misskey?sslmode=disable \
 AUTH_SECRET=... \
+EXCLUDE_TYPES=pollVote \
 mise run migration:import
 ```

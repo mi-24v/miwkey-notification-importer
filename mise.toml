@@ -54,11 +54,16 @@ set -euo pipefail
 : "${AUTH_SECRET:?Set AUTH_SECRET}"
 
 EXTENSION_URL="${EXTENSION_URL:-http://localhost:38080}"
+exclude_args=()
+if [[ -n "${EXCLUDE_TYPES:-}" ]]; then
+  exclude_args+=(--exclude-types "$EXCLUDE_TYPES")
+fi
 
 go run ./cmd/miwkey-notification-importer \
   --postgres-url "$POSTGRES_URL" \
   --extension-url "$EXTENSION_URL" \
   --secret "$AUTH_SECRET" \
+  "${exclude_args[@]}" \
   --dry-run
 '''
 
@@ -72,9 +77,14 @@ set -euo pipefail
 : "${AUTH_SECRET:?Set AUTH_SECRET}"
 
 EXTENSION_URL="${EXTENSION_URL:-http://localhost:38080}"
+exclude_args=()
+if [[ -n "${EXCLUDE_TYPES:-}" ]]; then
+  exclude_args+=(--exclude-types "$EXCLUDE_TYPES")
+fi
 
 go run ./cmd/miwkey-notification-importer \
   --postgres-url "$POSTGRES_URL" \
   --extension-url "$EXTENSION_URL" \
-  --secret "$AUTH_SECRET"
+  --secret "$AUTH_SECRET" \
+  "${exclude_args[@]}"
 '''

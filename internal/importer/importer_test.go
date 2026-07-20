@@ -94,6 +94,40 @@ func TestImporterStopsOnPayloadValidationFailure(t *testing.T) {
 	}
 }
 
+func TestImporterSkipsExcludedUnsupportedTypes(t *testing.T) {
+	reader := &fakeReader{rows: []notification.Row{
+		notificationRow("first", "follow"),
+		notificationRow("bad", "pollVote"),
+		notificationRow("second", "reaction"),
+	}}
+	client := &fakeClient{}
+	imp := importer.Importer{Reader: reader, Client: client}
+
+	result, err := imp.Run(context.Background(), importer.Options{
+		DryRun:       true,
+		BatchSize:    10,
+		ExcludeTypes: []string{"pollVote"},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.SuccessCount != 2 {
+		t.Fatalf("SuccessCount = %d", result.SuccessCount)
+	}
+	if result.SkippedCount != 1 {
+		t.Fatalf("SkippedCount = %d", result.SkippedCount)
+	}
+	if result.FailureCount != 0 {
+		t.Fatalf("FailureCount = %d", result.FailureCount)
+	}
+	if result.LastSuccessfulID != "second" {
+		t.Fatalf("LastSuccessfulID = %q", result.LastSuccessfulID)
+	}
+	if result.LastSkippedID != "bad" {
+		t.Fatalf("LastSkippedID = %q", result.LastSkippedID)
+	}
+}
+
 func notificationRow(id string, notificationType string) notification.Row {
 	return notification.Row{
 		ID:         id,

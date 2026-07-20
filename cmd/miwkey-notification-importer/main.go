@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -67,6 +68,7 @@ func runImport(ctx context.Context, args []string, stderr io.Writer) error {
 	flags.IntVar(&cfg.limit, "limit", 0, "maximum number of notifications to import")
 	flags.StringVar(&cfg.resumeAfterID, "resume-after-id", "", "resume after this notification id")
 	flags.IntVar(&cfg.batchSize, "batch-size", 500, "number of rows to read per PostgreSQL query")
+	flags.StringVar(&cfg.excludeTypes, "exclude-types", "", "comma-separated notification types to skip before validation")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -96,6 +98,7 @@ func runImport(ctx context.Context, args []string, stderr io.Writer) error {
 		Limit:         cfg.limit,
 		BatchSize:     cfg.batchSize,
 		ResumeAfterID: cfg.resumeAfterID,
+		ExcludeTypes:  splitCommaList(cfg.excludeTypes),
 	})
 	printResult(stderr, result)
 	if err != nil {
@@ -113,6 +116,7 @@ type config struct {
 	limit         int
 	resumeAfterID string
 	batchSize     int
+	excludeTypes  string
 }
 
 func (c config) validate() error {
@@ -142,12 +146,30 @@ func (c config) tokenSource() auth.TokenSource {
 }
 
 func printResult(w io.Writer, result importer.Result) {
-	fmt.Fprintf(w, "success=%d failure=%d last_successful_id=%q failed_id=%q\n",
+	fmt.Fprintf(w, "success=%d skipped=%d failure=%d last_successful_id=%q last_skipped_id=%q failed_id=%q\n",
 		result.SuccessCount,
+		result.SkippedCount,
 		result.FailureCount,
 		result.LastSuccessfulID,
+		result.LastSkippedID,
 		result.FailedID,
 	)
+}
+
+func splitCommaList(value string) []string {
+	if value == "" {
+		return nil
+	}
+
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
 }
 
 type poolDB struct {
