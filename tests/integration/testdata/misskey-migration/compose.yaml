@@ -82,15 +82,12 @@ services:
       - "${DYNAMODB_PORT:-38000}:8000"
 
   extension-server:
-    image: golang:1.25.11-alpine
-    working_dir: /workspace/miwkey-extension
-    command: >
-      sh -lc 'until nc -z dynamodb-local 8000; do sleep 1; done;
-      /usr/local/go/bin/go run ./app'
+    build:
+      context: ${MIWKEY_EXTENSION_DIR:?Set MIWKEY_EXTENSION_DIR}
+      dockerfile: Dockerfile
     depends_on:
       - dynamodb-local
     environment:
-      PATH: /usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       AUTH_SECRET: ${AUTH_SECRET:-miwkey-importer-integration-secret}
       AWS_ACCESS_KEY_ID: integration
       AWS_SECRET_ACCESS_KEY: integration
@@ -100,15 +97,9 @@ services:
       DYNAMODB_NOTIFICATION_TABLE: Notifications
     ports:
       - "${EXTENSION_PORT:-38080}:8080"
-    volumes:
-      - ${MIWKEY_EXTENSION_DIR:?Set MIWKEY_EXTENSION_DIR}:/workspace/miwkey-extension:ro
-      - extension-go-mod:/go/pkg/mod
-      - extension-go-cache:/root/.cache/go-build
 
 volumes:
   source-db-data:
   source-redis-data:
   target-db-data:
   target-redis-data:
-  extension-go-mod:
-  extension-go-cache:
