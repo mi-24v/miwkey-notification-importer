@@ -7,6 +7,8 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
 export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-miwkey-notification-importer-it}"
 export AUTH_SECRET="${AUTH_SECRET:-miwkey-importer-integration-secret}"
 export MIWKEY_EXTENSION_DIR="${MIWKEY_EXTENSION_DIR:-${REPO_ROOT}/../miwkey-extension}"
+export MISSKEY_SOURCE_IMAGE="${MISSKEY_SOURCE_IMAGE:-misskey/misskey:12.119.0}"
+export MISSKEY_TARGET_IMAGE="${MISSKEY_TARGET_IMAGE:-misskey/misskey:2025.12.2}"
 export SOURCE_MISSKEY_PORT="${SOURCE_MISSKEY_PORT:-31200}"
 export TARGET_MISSKEY_PORT="${TARGET_MISSKEY_PORT:-32500}"
 export EXTENSION_PORT="${EXTENSION_PORT:-38080}"
@@ -29,13 +31,13 @@ reset_env() {
   echo "Starting isolated PostgreSQL and Redis services"
   compose up -d source-db source-redis target-db target-redis dynamodb-local
 
-  echo "Running Misskey 12.119.0 migrations"
+  echo "Running source Misskey migrations (${MISSKEY_SOURCE_IMAGE})"
   compose run --rm source-misskey npm run init
 
-  echo "Running Misskey 2025.12.2 migrations"
+  echo "Running target Misskey migrations (${MISSKEY_TARGET_IMAGE})"
   compose run --rm target-misskey pnpm migrate
 
-  echo "Seeding source Misskey 12.119.0 notification rows"
+  echo "Seeding source Misskey notification rows"
   compose exec -T source-db psql -U misskey -d misskey -v ON_ERROR_STOP=1 < "${SCRIPT_DIR}/seed-source-notifications.sql"
 
   echo "Starting both Misskey versions and the extension server"

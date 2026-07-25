@@ -138,6 +138,15 @@ mise run test:integration
 Set `MIWKEY_EXTENSION_DIR` if the extension server repository is not at
 `../miwkey-extension`.
 
+Set `MISSKEY_SOURCE_IMAGE` or `MISSKEY_TARGET_IMAGE` to run the same migration
+test against a local or GHCR Misskey image. These overrides are for integration
+verification and do not define the production deployment image.
+
+```bash
+MISSKEY_TARGET_IMAGE=miwkey/misskey:local-786d8d39eb \
+mise run test:integration
+```
+
 For manual checks against an existing extension environment:
 
 ```bash

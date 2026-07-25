@@ -26,7 +26,7 @@ services:
       retries: 30
 
   source-misskey:
-    image: misskey/misskey:12.119.0
+    image: ${MISSKEY_SOURCE_IMAGE:-misskey/misskey:12.119.0}
     depends_on:
       source-db:
         condition: service_healthy
@@ -64,7 +64,7 @@ services:
       retries: 30
 
   target-misskey:
-    image: misskey/misskey:2025.12.2
+    image: ${MISSKEY_TARGET_IMAGE:-misskey/misskey:2025.12.2}
     depends_on:
       target-db:
         condition: service_healthy
